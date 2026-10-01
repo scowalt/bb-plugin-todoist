@@ -5,17 +5,18 @@
   "scripts": {
     "build": "bb plugin build",
     "typecheck": "tsc --noEmit",
-    "dev": "bb plugin dev"
+    "dev": "bb plugin dev",
+    "test": "vitest run"
   },
   "engines": {
     "bb": ">=0.44",
     "bbPluginSdk": ">=0.5.29"
   },
   "bb": {
-    "name": "Todoist",
-    "description": "Boilerplate for a Todoist integration with BB; currently contains the example todo list.",
+    "name": "Tasks for Todoist",
+    "description": "View and complete Todoist tasks, and draft agent work in BB. Not created by, affiliated with, or supported by Todoist.",
     "branding": {
-      "icon": "ListTodo"
+      "icon": "./assets/icon.svg"
     },
     "server": "./server.ts",
     "app": "./app.tsx"
@@ -27,14 +28,6 @@
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.5.29",
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "better-sqlite3": "^12.0.0",
-    "cron-parser": "^5.5.0",
-    "hono": "^4.11.9",
-    "typescript": "^5.7.0",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
     "@radix-ui/react-context-menu": "^2.3.3",
@@ -46,10 +39,21 @@
     "@radix-ui/react-popover": "^1.1.19",
     "@radix-ui/react-select": "^2.3.3",
     "@radix-ui/react-tooltip": "^1.2.12",
+    "@testing-library/react": "^16.3.3",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "better-sqlite3": "^12.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cron-parser": "^5.5.0",
+    "hono": "^4.11.9",
+    "jsdom": "^30.1.1",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
-    "vaul": "^1.1.2"
+    "typescript": "^5.7.0",
+    "vaul": "^1.1.2",
+    "vitest": "^5.0.3"
   }
 }

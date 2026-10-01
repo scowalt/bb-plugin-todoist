@@ -1,22 +1,32 @@
-This is a development scaffold for a Todoist integration with BB.
-Todoist authentication, API access, and synchronization are not implemented.
-The features below describe the generated local example only.
+## Your Todoist tasks, ready for agent work
 
-## What you get
+See tasks due today or overdue in BB, with their descriptions, due dates, and
+links back to Todoist. Refresh when you want the latest list. Click a task's
+checkbox to complete its current occurrence: recurring tasks advance to their
+next occurrence rather than ending the series.
 
-- An **Example todos** page in the left sidebar that adds, completes, and
-  removes todos.
-- A `bb todoist` command that does the same from a terminal.
-- Live updates, so a change made in one place reaches every open page at once.
+Choose **Draft with agent** to open BB's new-thread composer with task context
+already filled in. Select the BB project and agent, review the prompt, and
+submit when ready. Opening a draft does not launch work.
 
-## How it works
+## User-controlled completion
 
-The todos live in this plugin's own storage on the BB server, one list per
-installation. Nothing leaves the machine, and the plugin needs no account, API
-key, or external service.
+The checkbox writes to Todoist, then refreshes the list. A recurring task can
+remain if its next occurrence still matches today/overdue. Regular tasks and
+their subtasks move to history. There is no undo/reopen, editing, deleting or
+commenting in BB.
 
-## For agents
+Failed completions leave the task visible with an error. An uncertain result
+requires checking Todoist before repeating; writes are never automatically
+retried. Successful completion followed by a failed refresh is reported
+separately, with completion disabled until the list refreshes.
 
-The bundled skill tells an agent to read the list with `bb todoist list`, add
-one todo at a time with `bb todoist add`, and close finished work with
-`bb todoist done`.
+The personal API token stays in a server-side BB secret. Starting agent work
+does not grant permission to modify Todoist: agents leave the task unchanged.
+Only the user's UI completion action is part of this workflow.
+
+There is no project mapping, automatic synchronization, or task-to-thread
+tracking. Task context is sent to the selected agent provider only when you
+submit the draft. Use a trusted BB instance.
+
+Not created by, affiliated with, or supported by Todoist.

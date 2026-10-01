@@ -1,198 +1,217 @@
-// bb-plugin-todoist — a BB plugin frontend entry.
-//
-// Compiled by `bb plugin build` into dist/app.js + dist/app.css. React and
-// @get-bb/plugin-sdk/app are provided by the BB app at load time (never bundled),
-// so this file must be loaded by BB, not imported directly.
-//
-// The components under components/ui/ are YOURS: vendored source (shadcn
-// model), edit freely. Add more from the BB registry with
-// `npx shadcn add @bb/<name>` (see components.json) — dropdowns, tables,
-// the full shadcn set, version-matched to this BB install. Run
-// `npm install` once before `bb plugin build`.
-import { useCallback, useEffect, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
-import { definePluginApp, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract, Todo } from "./server";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  definePluginApp,
+  experimental_NewThreadComposer as NewThreadComposer,
+  UrlLink,
+  useBbNavigate,
+  useRpc,
+  useSdk,
+} from "@get-bb/plugin-sdk/app";
+import type { rpcContract } from "./server";
+import type { CompletionResult, Task } from "./todoist";
+import { taskPrompt } from "./task-prompt";
+import { TaskList, type TaskCompletionState } from "./task-list";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 
-/** The todo list, kept current by the server's "todos-changed" signal. */
-function useTodos() {
+const completionErrors: Record<Extract<CompletionResult, { status: "error" }>["reason"], string> = {
+  not_configured: "No Todoist API token is configured. Set it in plugin settings, then Refresh.",
+  unauthorized: "Todoist rejected completion. Check the API token and its permissions in plugin settings.",
+  not_found: "This task is no longer available. Refresh the list to check its current state.",
+  rate_limited: "Todoist rate limit reached. Wait before trying again.",
+  rejected: "Todoist rejected this completion. Check the task in Todoist, then Refresh.",
+  unknown: "Could not confirm completion. It may have succeeded. Check Todoist and Refresh before completing another occurrence; nothing was retried.",
+};
+
+function TasksPage() {
   const rpc = useRpc<typeof rpcContract>();
-  const [todos, setTodos] = useState<Todo[] | null>(null);
+  const sdk = useSdk();
+  const navigate = useBbNavigate();
+  const [result, setResult] = useState<{
+    configured: boolean; tasks: Task[]; truncated: boolean;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const report = useCallback((cause: unknown) => {
-    setError(cause instanceof Error ? cause.message : String(cause));
-  }, []);
-  const refetch = useCallback(() => {
-    rpc.call("todos_list").then((result) => {
-      setTodos(result.todos);
-      setError(null);
-    }, report);
-  }, [rpc, report]);
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-  // server.ts publishes after every write — from this page, another window,
-  // or `bb todoist add` run by an agent — so the list never goes stale.
-  useRealtime("todos-changed", refetch);
-  return { rpc, todos, error, report, refetch };
-}
+  const [selected, setSelected] = useState<Task | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [spawnError, setSpawnError] = useState(false);
+  const spawning = useRef(false);
+  const generation = useRef(0);
+  const mounted = useRef(false);
+  const refreshing = useRef(false);
+  const inFlight = useRef(false);
+  const [completing, setCompleting] = useState(false);
+  const [completions, setCompletions] = useState(new Map<string, TaskCompletionState>());
 
-function TodoRow({
-  todo,
-  onToggle,
-  onRemove,
-}: {
-  todo: Todo;
-  onToggle: (done: boolean) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <li className="flex items-center gap-3 py-2.5 text-sm">
-      <Checkbox
-        checked={todo.done}
-        onCheckedChange={(checked) => onToggle(checked === true)}
-        aria-label={`Mark "${todo.title}" ${todo.done ? "not done" : "done"}`}
-      />
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate",
-          todo.done && "text-muted-foreground line-through",
-        )}
-      >
-        {todo.title}
-      </span>
-      <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-        {todo.id}
-      </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 text-muted-foreground hover:text-foreground"
-        aria-label={`Remove "${todo.title}"`}
-        onClick={onRemove}
-      >
-        <Icon name="Trash2" className="size-4" />
-      </Button>
-    </li>
-  );
-}
-
-/** The dashed box BB's own list pages use for loading and empty states. */
-function EmptyState({ children }: { children: ReactNode }) {
-  return (
-    <div
-      role="status"
-      className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground"
-    >
-      {children}
-    </div>
-  );
-}
-
-// Tailwind classes compile against the host theme's live CSS variables —
-// derive colors from the theme tokens, never hardcoded grays. The frame
-// (scrolling page, centered column) matches BB's own nav-panel pages.
-function TodosPage() {
-  const { rpc, todos, error, report, refetch } = useTodos();
-  const [title, setTitle] = useState("");
-  const [pending, setPending] = useState(false);
-  const add = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const next = title.trim();
-    if (next === "" || pending) return;
-    setPending(true);
+  const refresh = useCallback(async (afterCompletion = false) => {
+    if (inFlight.current && !afterCompletion) return;
+    const current = ++generation.current;
+    refreshing.current = true;
+    setLoading(true);
+    setError(null);
+    // Manual refresh clears data from removed/rotated credentials. After a write,
+    // retain the row until a fresh list arrives, including if that read fails.
+    if (!afterCompletion) setResult(null);
     try {
-      await rpc.call("todos_add", { title: next });
-      setTitle("");
-      refetch();
+      const next = await rpc.call("tasks_list");
+      if (current === generation.current) {
+        setResult(next);
+        setCompletions(new Map());
+      }
     } catch (cause) {
-      report(cause);
+      if (current === generation.current) {
+        setError(afterCompletion
+          ? "Occurrence completed in Todoist, but the list could not be refreshed. Use Refresh to reload it; do not complete it again."
+          : cause instanceof Error ? cause.message : "Could not load Todoist tasks.");
+      }
     } finally {
-      setPending(false);
+      if (current === generation.current) {
+        refreshing.current = false;
+        setLoading(false);
+      }
     }
-  };
-  const doneCount = todos?.filter((todo) => todo.done).length ?? 0;
+  }, [rpc]);
+  useEffect(() => {
+    mounted.current = true;
+    void refresh();
+    return () => { mounted.current = false; generation.current++; };
+  }, [refresh]);
+
+  async function complete(task: Task) {
+    const previous = completions.get(task.id);
+    if (inFlight.current || refreshing.current || previous?.status === "completed"
+      || (previous?.status === "error" && previous.needsRefresh)) return;
+    // Synchronous guard also blocks a second click before React re-renders.
+    inFlight.current = true;
+    setCompleting(true);
+    setCompletions(current => new Map(current).set(task.id, { status: "saving" }));
+    let outcome: CompletionResult;
+    try {
+      outcome = await rpc.call("tasks_complete", { taskId: task.id });
+    } catch {
+      // The RPC response itself can be lost after a successful write.
+      outcome = { status: "error", reason: "unknown" };
+    }
+    try {
+      if (!mounted.current) return;
+      if (outcome.status === "completed") {
+        setCompletions(current => new Map(current).set(task.id, { status: "completed" }));
+        await refresh(true);
+      } else {
+        setCompletions(current => new Map(current).set(task.id, {
+          status: "error",
+          message: completionErrors[outcome.reason],
+          needsRefresh: ["unknown", "not_found", "rejected", "not_configured"].includes(outcome.reason),
+        }));
+      }
+    } finally {
+      inFlight.current = false;
+      if (mounted.current) setCompleting(false);
+    }
+  }
+
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto box-border w-full max-w-3xl px-4 pb-4 pt-3 md:px-5 md:pt-4">
-        <p className="text-sm text-muted-foreground">
-          Agents keep this list with <code>bb todoist</code>; the skill in{" "}
-          <code>skills/example-todos</code> tells them how.
-        </p>
-        <form onSubmit={add} className="mt-4 flex items-center gap-2">
-          <Input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="What needs doing?"
-            aria-label="New todo"
-          />
-          <Button type="submit" disabled={pending || title.trim() === ""}>
-            <Icon name="Plus" className="size-4" />
-            Add
-          </Button>
-        </form>
-        {error === null ? null : (
-          <p role="alert" className="mt-3 text-sm text-destructive">
-            {error}
-          </p>
+      <div className={`mx-auto w-full px-4 py-4 md:px-6 md:py-5 ${selected ? "max-w-4xl" : "max-w-3xl"}`}>
+        {selected ? (
+          <section aria-label="Start Todoist task">
+            <Button variant="outline" disabled={submitting} onClick={() => {
+              setSelected(null);
+              setSpawnError(false);
+            }}>Back to tasks</Button>
+            <h2 className="mt-4 text-lg font-semibold">Start with agent</h2>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Choose a BB project and agent, review the prompt, then submit. Todoist will not be changed.
+            </p>
+            {spawnError && <p role="alert" className="mb-3 text-sm text-destructive">
+              Could not confirm thread creation. Check BB for a new thread before retrying; your draft is preserved.
+            </p>}
+            <NewThreadComposer
+              key={selected.id}
+              draftKey={`todoist-task-${selected.id}`}
+              initialPrompt={taskPrompt(selected)}
+              layout="document"
+              onSubmit={async (request) => {
+                if (spawning.current) throw new Error("Thread creation already in progress.");
+                spawning.current = true;
+                setSubmitting(true);
+                setSpawnError(false);
+                let thread;
+                try {
+                  thread = await sdk.threads.spawn(request);
+                } catch {
+                  setSpawnError(true);
+                  throw new Error("Could not confirm thread creation. Check BB before retrying.");
+                } finally {
+                  spawning.current = false;
+                  setSubmitting(false);
+                }
+                setSelected(null);
+                navigate.toThread(thread.id);
+              }}
+            />
+          </section>
+        ) : (
+          <>
+            <header className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-baseline gap-2.5">
+                <h2 className="text-base font-semibold">Todoist</h2>
+                {result?.configured && <span className="text-xs tabular-nums text-muted-foreground">
+                  {result.tasks.length}{result.truncated ? "+" : ""} {result.tasks.length === 1 ? "task" : "tasks"}
+                </span>}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0 text-muted-foreground"
+                aria-label={loading ? "Refreshing tasks" : "Refresh"}
+                disabled={loading || completing}
+                onClick={() => void refresh()}
+              >
+                <Icon name="RefreshCw" aria-hidden className={loading ? "motion-safe:animate-spin" : ""} />
+              </Button>
+            </header>
+            {loading && <p role="status" className="mt-4">Loading tasks…</p>}
+            {error && <p role="alert" className="mt-4 text-destructive">{error}</p>}
+            {result && !result.configured && <section
+              aria-labelledby="todoist-setup-title"
+              className="mt-6 rounded-lg border border-border bg-card p-5"
+            >
+              <h3 id="todoist-setup-title" className="font-semibold">Connect Todoist</h3>
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
+                <li>Copy your API token from <UrlLink
+                  href="https://app.todoist.com/app/settings/integrations"
+                  className="text-foreground underline underline-offset-4"
+                >Todoist integrations</UrlLink>.</li>
+                <li>Open this plugin’s settings and paste it into <strong className="font-medium text-foreground">Todoist API token</strong>.</li>
+                <li>Return here and click <strong className="font-medium text-foreground">Refresh</strong>.</li>
+              </ol>
+              <Button asChild className="mt-5">
+                <UrlLink href="/settings/plugins/todoist">Open settings</UrlLink>
+              </Button>
+              <p className="mt-3 text-xs text-muted-foreground">Your token stays on the BB server. Never paste it into a thread.</p>
+            </section>}
+            {result?.configured && <>
+              {result.truncated && <p role="status" className="mt-4">
+                Showing a partial list (up to 1,000 tasks). Open Todoist for the full list.
+              </p>}
+              {result.tasks.length === 0 ? <p role="status" className="mt-4">
+                No tasks due today or overdue.
+              </p> : <TaskList
+                tasks={result.tasks} onDraft={setSelected} onComplete={task => void complete(task)}
+                completions={completions} completionDisabled={loading || completing}
+              />}
+            </>}
+          </>
         )}
-        <div className="mt-4">
-          {todos === null ? (
-            <EmptyState>Loading todos…</EmptyState>
-          ) : todos.length === 0 ? (
-            <EmptyState>
-              Nothing to do. Add one above, or run{" "}
-              <code>bb todoist add "Ship it"</code>.
-            </EmptyState>
-          ) : (
-            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card px-4">
-              {todos.map((todo) => (
-                <TodoRow
-                  key={todo.id}
-                  todo={todo}
-                  onToggle={(done) => {
-                    rpc
-                      .call("todos_set_done", { id: todo.id, done })
-                      .then(refetch, report);
-                  }}
-                  onRemove={() => {
-                    rpc
-                      .call("todos_remove", { id: todo.id })
-                      .then(refetch, report);
-                  }}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-        {todos !== null && todos.length > 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            {doneCount} of {todos.length} done
-          </p>
-        ) : null}
       </div>
     </div>
   );
 }
 
-// The default export must be definePluginApp(...); BB interprets it after
-// loading the bundle. navPanel adds a page to the left sidebar; register
-// other UI under app.slots and composer actions, plus-menu rows, banners, or
-// rich-text rules with app.composer.customize(...) (see the bb guide's
-// plugins chapter).
 export default definePluginApp((app) => {
   app.slots.navPanel({
-    id: "example-todos",
-    title: "Example todos",
-    icon: "ListTodo",
-    // Routed at /plugins/todoist/example-todos; the component receives the
-    // remainder as `subPath` for deep links within the page.
-    path: "example-todos",
-    component: TodosPage,
+    id: "tasks", title: "Todoist", icon: "ListTodo", path: "tasks", component: TasksPage,
   });
 });
