@@ -16,7 +16,6 @@ export default async function plugin(bb: BbPluginApi) {
   });
   const lifecycle = new AbortController();
   bb.onDispose(() => lifecycle.abort());
-  // Per-plugin-instance lock: overlapping requests for one task share one write.
   const completions = new Map<string, Promise<CompletionResult>>();
 
   bb.rpc.register(rpcContract, {
@@ -39,7 +38,6 @@ export default async function plugin(bb: BbPluginApi) {
       return operation;
     },
     tasks_list: async () => {
-      // Re-read so setting/rotating/removing a token does not require a reload.
       const token = (await settings.get()).apiToken?.trim();
       if (!token) return { configured: false, tasks: [], truncated: false };
       return listTasks(token, AbortSignal.any([

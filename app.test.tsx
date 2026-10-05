@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -124,7 +123,6 @@ it("keeps unexpected or missing dates visible without mislabeling them as today"
 });
 
 it("expands and collapses a two-line Markdown preview with accessible controls", async () => {
-  // jsdom has no layout: supply the measured line height and overflowing content height.
   const computedStyle = window.getComputedStyle.bind(window);
   vi.spyOn(window, "getComputedStyle").mockImplementation(element => {
     const style = computedStyle(element);
@@ -144,7 +142,6 @@ it("expands and collapses a two-line Markdown preview with accessible controls",
   const preview = document.getElementById(more.getAttribute("aria-controls")!)!;
   expect(more.getAttribute("aria-expanded")).toBe("false");
   expect(preview.classList.contains("max-h-10")).toBe(true);
-  // The SDK harness stubs Markdown rather than rendering the host's parser.
   expect(within(preview).getByTestId("bb-markdown").textContent).toBe(description);
   expect(observe).toHaveBeenCalled();
   fireEvent.click(more);
@@ -155,7 +152,6 @@ it("expands and collapses a two-line Markdown preview with accessible controls",
   fireEvent.click(less);
   expect(more.getAttribute("aria-expanded")).toBe("false");
   expect(preview.classList.contains("max-h-10")).toBe(true);
-  // Focusing a Markdown link below the crop reveals it before keyboard interaction.
   fireEvent.focus(preview);
   expect(more.getAttribute("aria-expanded")).toBe("true");
   expect(slot.inspection.sdkCalls).toHaveLength(0);
@@ -243,7 +239,6 @@ it("renders a recurring task's refreshed next occurrence even when the ID still 
   expect(slot.queryByRole("region", { name: /Overdue/ })).toBeNull();
   expect(complete).toHaveBeenCalledTimes(1);
   expect(list).toHaveBeenCalledTimes(2);
-  // Only a new explicit click completes the next occurrence.
   fireEvent.click(next);
   await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
   expect(complete).toHaveBeenCalledTimes(2);
