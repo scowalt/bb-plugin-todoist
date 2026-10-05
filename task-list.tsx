@@ -21,7 +21,6 @@ function TaskDescription({ task }: { task: Task }) {
       setOverflows(element.scrollHeight > lineHeight * 2 + 1);
     };
     measure();
-    // Measure the unclipped content, including after wrapping or Markdown layout changes.
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     observer?.observe(element);
     return () => observer?.disconnect();
@@ -31,7 +30,6 @@ function TaskDescription({ task }: { task: Task }) {
     <div
       id={id}
       className={expanded ? "" : "max-h-10 overflow-hidden"}
-      // Keyboard navigation to a link below the preview must reveal that link.
       onFocusCapture={() => { if (overflows) setExpanded(true); }}
     >
       <div ref={content} className="break-words text-sm leading-5 [overflow-wrap:anywhere]">
@@ -116,7 +114,6 @@ function TaskRow({ task, date, onDraft, onComplete, completion, completionDisabl
 const groups: { id: TaskDateGroup; title: string }[] = [
   { id: "today", title: "Today" },
   { id: "overdue", title: "Overdue" },
-  // Keep every API result visible if the account/browser dates differ or a date is missing.
   { id: "other", title: "Other dates" },
 ];
 

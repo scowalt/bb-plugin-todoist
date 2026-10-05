@@ -22,7 +22,6 @@ export const taskListSchema = z.object({
   truncated: z.boolean(),
 });
 
-// Todoist uses opaque base32/numeric IDs, not client-side tmp-* placeholders.
 export const completeTaskInputSchema = z.object({
   taskId: z.string().min(1).max(128).regex(/^[A-Za-z0-9]+$/),
 }).strict();
@@ -35,16 +34,12 @@ export const completionResultSchema = z.discriminatedUnion("status", [
 ]);
 export type CompletionResult = z.infer<typeof completionResultSchema>;
 
-/** Close the current occurrence, never complete/archive an entire recurring series.
- * https://developer.todoist.com/api/v1/#tag/Tasks/operation/close_task_api_v1_tasks__task_id__close_post
- */
 export async function completeTask(
   token: string,
   taskId: string,
   signal: AbortSignal,
   request: typeof fetch = fetch,
 ): Promise<CompletionResult> {
-  // Also validate direct callers before constructing a URL or touching the network.
   completeTaskInputSchema.parse({ taskId });
   try {
     signal.throwIfAborted();
@@ -54,8 +49,6 @@ export async function completeTask(
       redirect: "error",
       signal,
     });
-    // Close returns 200 with JSON null. A successful write needs no response body;
-    // a body/parse failure must not be mistaken for a failed completion.
     void response.body?.cancel().catch(() => {});
     if (response.ok) return { status: "completed" };
     if (response.status === 401 || response.status === 403) return { status: "error", reason: "unauthorized" };
@@ -63,13 +56,10 @@ export async function completeTask(
     if (response.status === 429) return { status: "error", reason: "rate_limited" };
     if (response.status === 400) return { status: "error", reason: "rejected" };
   } catch {
-    // Timeout, cancellation, redirects and transport errors can follow a write.
-    // Never retry automatically or expose request/response details or credentials.
   }
   return { status: "error", reason: "unknown" };
 }
 
-/** Fixed-origin filtered read; no general-purpose API proxy. */
 export async function listTasks(
   token: string,
   signal: AbortSignal,
@@ -78,7 +68,6 @@ export async function listTasks(
   const tasks = new Map<string, Task>();
   const cursors = new Set<string>();
   let cursor: string | null = null;
-  // Bound a refresh to 1,000 tasks / five requests, with an explicit partial-list notice.
   for (let page = 0; page < 5; page++) {
     const url = new URL("https://api.todoist.com/api/v1/tasks/filter");
     url.searchParams.set("query", "today | overdue");
@@ -94,7 +83,6 @@ export async function listTasks(
         signal,
       });
     } catch {
-      // Never expose fetch errors, headers, tokens or raw API responses.
       throw new Error("Could not reach Todoist. The request may have timed out; try Refresh.");
     }
     if (!response.ok) {

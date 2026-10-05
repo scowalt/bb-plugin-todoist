@@ -17,7 +17,6 @@ describe("task calendar dates", () => {
   });
 
   it("keeps date-only values on their calendar day near local midnight", () => {
-    // Also run this suite with TZ=America/Los_Angeles and TZ=Pacific/Auckland.
     for (const hour of [0, 23]) {
       expect(due("2026-10-01", new Date(2026, 9, 1, hour, 59)).group).toBe("today");
     }

@@ -70,7 +70,6 @@ it("coalesces overlapping completion calls, then releases the per-task lock", as
     await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
     finish(Response.json(null));
     expect(await Promise.all([first, duplicate])).toEqual([{ status: "completed" }, { status: "completed" }]);
-    // An explicit later click may close the recurring task's next occurrence.
     expect(await harness.behavior.callRpc("tasks_complete", { taskId: "abc123" })).toEqual({ status: "completed" });
     expect(request).toHaveBeenCalledTimes(2);
     expect(harness.inspection.sdk.calls).toEqual([]);

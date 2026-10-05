@@ -2,7 +2,6 @@ import type { Task } from "./todoist";
 
 export type TaskDateGroup = "today" | "overdue" | "other";
 
-/** Todoist's due.date is a calendar date, not a UTC instant. Keep its date part. */
 function calendarDate(value: string): Date | null {
   const parts = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(value);
   if (!parts) return null;
@@ -15,7 +14,6 @@ function calendarDate(value: string): Date | null {
     && date.getDate() === Number(day) ? date : null;
 }
 
-/** Presentation only: Todoist remains responsible for selecting today | overdue. */
 export function taskDate(due: Task["due"], now: Date): {
   label: string;
   exact: string | null;

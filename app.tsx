@@ -49,8 +49,6 @@ function TasksPage() {
     refreshing.current = true;
     setLoading(true);
     setError(null);
-    // Manual refresh clears data from removed/rotated credentials. After a write,
-    // retain the row until a fresh list arrives, including if that read fails.
     if (!afterCompletion) setResult(null);
     try {
       const next = await rpc.call("tasks_list");
@@ -81,7 +79,6 @@ function TasksPage() {
     const previous = completions.get(task.id);
     if (inFlight.current || refreshing.current || previous?.status === "completed"
       || (previous?.status === "error" && previous.needsRefresh)) return;
-    // Synchronous guard also blocks a second click before React re-renders.
     inFlight.current = true;
     setCompleting(true);
     setCompletions(current => new Map(current).set(task.id, { status: "saving" }));
@@ -89,7 +86,6 @@ function TasksPage() {
     try {
       outcome = await rpc.call("tasks_complete", { taskId: task.id });
     } catch {
-      // The RPC response itself can be lost after a successful write.
       outcome = { status: "error", reason: "unknown" };
     }
     try {

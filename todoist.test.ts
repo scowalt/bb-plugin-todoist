@@ -85,8 +85,6 @@ describe("Todoist occurrence completion", () => {
       `https://api.todoist.com/api/v1/tasks/${taskId}/close`,
       { method: "POST", headers: { Authorization: "Bearer test-token" }, redirect: "error", signal: cancellation },
     ]]);
-    // No due-date edit, item_complete, Sync command, or series-completion option:
-    // /close itself selects normal completion vs. advancing a recurring occurrence.
     expect(request.mock.calls[0]![1]).not.toHaveProperty("body");
   });
 
