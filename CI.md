@@ -3,14 +3,12 @@
 ## Native Linux routing
 
 The workflow selects `ci_os: linux`, matching the supported Woodpecker 3.19
-agent setting `WOODPECKER_AGENT_LABELS=ci_os=linux`. Before merging this change,
-the parent must configure and read back that label and actual Linux ARM64
-platform on the current agent, then verify the label and Linux AMD64 platform
-on its replacement. Include no other OS or unsupported CPU; retain native platform
-reporting. This routing label is not a security boundary or hardware attestation.
-The original image index supports both targets, without a matrix or emulation.
-ARM64 rollout guidance below is historical, not native AMD64 proof. Commands,
-pins and status layout stay unchanged; actual AMD64 acceptance is separate.
+agent setting `WOODPECKER_AGENT_LABELS=ci_os=linux`. The parent must configure
+and read back that label and the actual `linux/amd64` platform on the current
+agent. Include no other OS or unsupported CPU; retain native platform reporting.
+This routing label is not a security boundary or hardware attestation. The
+pinned image index includes a `linux/amd64` manifest; there is no matrix or
+emulation. Commands, pins and status layout stay unchanged.
 
 ## Contract
 
@@ -23,7 +21,7 @@ or path filters. [The native pipeline](.woodpecker.yaml) preserves these event
 inputs as `push`, `tag`, and `pull_request`, without narrowing branches or paths.
 Caching is not a correctness input; no shared host cache is mounted.
 
-The Linux ARM64/AMD64-capable image is
+The digest-pinned image is
 `ghcr.io/astral-sh/uv:0.11.32-python3.14-trixie@sha256:adafbab0c780d8bd995039e9dfd800f95a057867d283deee7d5eb1b3126551b2`.
 The pipeline selects `ci_os: linux` and runs the original commands in order:
 
@@ -51,10 +49,11 @@ and the original Actions workflow byte-for-byte for rollback.
 
 ## Parent-owned rollout
 
-Source preparation and local strict lint are not hosted ARM64 acceptance or a
+Source preparation and local strict lint are not hosted acceptance or a
 completed migration. A separate merger/reviewer integrates the source before
-serialized live operations. Use the existing single ARM64 agent, capacity 1,
-2 GiB job limit on the 4 GiB CAX11 in hel1; add no capacity or spend.
+serialized live operations. Use the single Woodpecker agent on the x86-64
+`woodpecker` host (`linux/amd64`), capacity 1, 2 GiB job limit; add no capacity
+or spend.
 
 1. Keep Actions enabled. Record current default-main SHA/tree, original workflow
    blob, protections, rulesets, required contexts, and Actions settings. Activate
@@ -67,7 +66,7 @@ serialized live operations. Use the existing single ARM64 agent, capacity 1,
    privileged mode, socket, host mount, auth bootstrap, or higher trust.
 2. Deliver through **one ordinary reviewed PR**. Record its exact head SHA/tree
    and actual native PR event, clone, job, original commands, zero-violation
-   policy file count, all 13 passing tests, and ARM64 agent identity. Require
+   policy file count, all 13 passing tests, and `linux/amd64` agent identity. Require
    matching exact-SHA GitHub success; local x86_64 tests/lint do not substitute.
    Preserve configured push/tag/PR and fork-approval behavior, but distinguish
    configuration evidence from actual PR/main execution. Do not manufacture tag
@@ -78,7 +77,7 @@ serialized live operations. Use the existing single ARM64 agent, capacity 1,
    Obtain the **actual resulting default-main SHA**, its tree and ordered
    parents; verify the reviewed tree and original workflow blob. Require actual
    native **push** success for that main SHA, clone/job/original commands,
-   policy count/13 tests/ARM64, and matching exact-SHA GitHub success before
+   policy count/13 tests/`linux/amd64`, and matching exact-SHA GitHub success before
    cutover. Do not substitute PR results or an expected merge SHA.
 4. Only after PR and resulting-main proof, replace corresponding Actions-based
    requirements with observed native contexts, preserving unrelated protections
